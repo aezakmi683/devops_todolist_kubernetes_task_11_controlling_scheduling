@@ -1,5 +1,6 @@
 #!/bin/bash
 kubectl apply -f .infrastructure/mysql/ns.yml
+kubectl taint nodes -l app=mysql app=mysql:NoSchedule --overwrite
 kubectl apply -f .infrastructure/mysql/configMap.yml
 kubectl apply -f .infrastructure/mysql/secret.yml
 kubectl apply -f .infrastructure/mysql/service.yml
