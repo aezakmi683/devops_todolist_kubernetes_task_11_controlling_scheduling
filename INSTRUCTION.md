@@ -1,276 +1,57 @@
-\# Task 11: Controlling Scheduling in Kubernetes
+# INSTRUCTION.md
 
+## Prerequisites
+Install Docker Desktop, kind, kubectl, and Helm. Run all commands from the repository root.
 
-
-\## Overview
-
-
-
-This task demonstrates Kubernetes scheduling using node labels, taints, tolerations, node affinity, and pod anti-affinity.
-
-
-
-The cluster runs a MySQL StatefulSet and a ToDo application Deployment. MySQL pods are scheduled only on nodes labeled `app=mysql`. The ToDo application prefers nodes labeled `app=todoapp`.
-
-
-
-\## Prerequisites
-
-
-
-\* Docker
-
-\* Kind
-
-\* kubectl
-
-\* Git Bash or WSL to execute `bootstrap.sh`
-
-
-
-\## 1. Create the Kind cluster
-
-
-
-From the project root, create the cluster using the provided configuration:
-
-
-
-```bash
-
-kind create cluster --name task11 --config cluster.yml
-
+## 1. Create or verify the kind cluster
+```powershell
+kind create cluster --config .\cluster.yml
+kubectl get nodes
 ```
+If the cluster already exists, skip cluster creation.
 
-
-
-Set the current context:
-
-
-
-```bash
-
-kubectl config use-context kind-task11
-
-```
-
-
-
-Check the cluster nodes and labels:
-
-
-
-```bash
-
+## 2. Inspect node labels and taints
+```powershell
 kubectl get nodes --show-labels
-
-kubectl get nodes -L app
-
+kubectl get nodes -o custom-columns="NAME:.metadata.name,LABELS:.metadata.labels,TAINTS:.spec.taints"
 ```
 
-
-
-The cluster configuration defines nodes labeled `app=mysql` and `app=todoapp`.
-
-
-
-\## 2. Configure MySQL node taints
-
-
-
-Apply the `NoSchedule` taint to nodes labeled `app=mysql`:
-
-
-
-```bash
-
-kubectl taint nodes -l app=mysql app=mysql:NoSchedule --overwrite
-
+Taint nodes carrying the `app=mysql` label:
+```powershell
+kubectl get nodes -l app=mysql
+kubectl get nodes -l app=mysql -o name | ForEach-Object {
+  kubectl taint $_ app=mysql:NoSchedule --overwrite
+}
+```
+If no nodes have that label, label the intended MySQL worker node first, for example:
+```powershell
+kubectl label node <NODE_NAME> app=mysql --overwrite
+kubectl taint node <NODE_NAME> app=mysql:NoSchedule --overwrite
 ```
 
-
-
-Verify the taints:
-
-
-
-```bash
-
-kubectl describe nodes
-
+## 3. Build chart dependencies and deploy
+```powershell
+helm dependency update .\helm-chart\todoapp
+helm lint .\helm-chart\todoapp
+helm template todoapp .\helm-chart\todoapp
+helm upgrade --install todoapp .\helm-chart\todoapp --namespace todoapp --create-namespace --wait --timeout 10m
 ```
 
-
-
-MySQL pods tolerate this taint and use required node affinity to select nodes labeled `app=mysql`.
-
-
-
-\## 3. Deploy the resources
-
-
-
-Run the bootstrap script from the project root:
-
-
-
-```bash
-
-bash ./bootstrap.sh
-
-```
-
-
-
-The script applies the MySQL and ToDo application resources and configures the MySQL node taints.
-
-
-
-\## 4. Verify the MySQL StatefulSet
-
-
-
-Check the StatefulSet and pods:
-
-
-
-```bash
-
+## 4. Validate the resources
+```powershell
+kubectl get all,cm,secret,ing -A
+kubectl get pods -A -o wide
 kubectl get statefulset -n mysql
-
-kubectl get pods -n mysql -o wide
-
-```
-
-
-
-Expected result: two MySQL replicas are ready and running on separate nodes labeled `app=mysql`.
-
-
-
-Inspect the scheduling configuration:
-
-
-
-```bash
-
-kubectl get statefulset mysql -n mysql -o yaml
-
-```
-
-
-
-Verify that the pod template contains:
-
-
-
-\* A toleration for `app=mysql:NoSchedule`.
-
-\* Required node affinity for `app=mysql`.
-
-\* Required pod anti-affinity using `kubernetes.io/hostname`.
-
-
-
-\## 5. Verify the ToDo application Deployment
-
-
-
-Check the Deployment and pods:
-
-
-
-```bash
-
 kubectl get deployment -n todoapp
-
-kubectl get pods -n todoapp -o wide
-
-```
-
-
-
-Expected result: two application replicas are ready and running on separate nodes.
-
-
-
-Inspect the scheduling configuration:
-
-
-
-```bash
-
-kubectl get deployment todoapp -n todoapp -o yaml
-
-```
-
-
-
-Verify that the pod template contains:
-
-
-
-\* Preferred node affinity for `app=todoapp` using `preferredDuringSchedulingIgnoredDuringExecution`.
-
-\* Required pod anti-affinity using `kubernetes.io/hostname`.
-
-
-
-\## 6. Verify node labels and taints
-
-
-
-```bash
-
-kubectl get nodes -L app
-
-kubectl get nodes -o custom-columns="NODE:.metadata.name,TAINTS:.spec.taints"
-
-```
-
-
-
-Confirm that MySQL pods run on nodes labeled `app=mysql` and application pods prefer nodes labeled `app=todoapp`.
-
-
-
-\## 7. Check resource health
-
-
-
-```bash
-
-kubectl get pods -A
-
+kubectl get hpa -n todoapp
 kubectl get pvc -A
-
-kubectl get events -A --sort-by=.lastTimestamp
-
 ```
 
-
-
-All expected pods should be running and ready, and required PersistentVolumeClaims should be bound.
-
-
-
-\## 8. Cleanup
-
-
-
-To remove the test cluster after validation:
-
-
-
-```bash
-
-kind delete cluster --name task11
-
+## 5. Generate the required inventory
+```powershell
+kubectl get all,cm,secret,ing -A > output.log
 ```
+Review `output.log` before committing. Do not put real credentials or decoded Secret values in the log.
 
-
-
-\*\*Note:\*\* Cleanup deletes the cluster and its workloads. Do not run this command while you still need the cluster for testing.
-
-
-
+## 6. Validate chart values
+Change configuration in `helm-chart/todoapp/values.yaml` and `helm-chart/todoapp/charts/mysql/values.yaml`, then run `helm upgrade --install` again to verify the chart uses the configured values.
