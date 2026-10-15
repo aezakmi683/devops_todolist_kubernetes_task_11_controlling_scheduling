@@ -1,0 +1,90 @@
+namespace: todoapp
+
+image:
+  repository: ikulyk404/todoapp
+  tag: "4.0.1"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+serviceAccount:
+  create: true
+  name: todoapp-sa
+
+secrets:
+  SECRET_KEY: "replace-me-before-production"
+  DB_NAME: "app_db"
+  DB_USER: "app_user"
+  DB_PASSWORD: "replace-me"
+  DB_HOST: "mysql.mysql.svc.cluster.local"
+
+resources:
+  requests:
+    cpu: 150m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+rollingUpdate:
+  maxSurge: 1
+  maxUnavailable: 0
+
+nodeAffinity:
+  enabled: false
+  key: kubernetes.io/hostname
+  values: []
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  averageCPUUtilization: 70
+  averageMemoryUtilization: 80
+
+pv:
+  enabled: true
+  capacity: 1Gi
+  hostPath: /tmp/todoapp-data
+
+pvc:
+  storage: 1Gi
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8080
+
+mysql:
+  namespace: mysql
+  serviceAccount:
+    name: mysql-sa
+  replicaCount: 2
+  image:
+    repository: mysql
+    tag: "8.0"
+    pullPolicy: IfNotPresent
+  secrets:
+    MYSQL_ROOT_PASSWORD: "replace-root-password"
+    MYSQL_DATABASE: "app_db"
+    MYSQL_USER: "app_user"
+    MYSQL_PASSWORD: "replace-me"
+  persistence:
+    storage: 1Gi
+  resources:
+    requests:
+      cpu: 150m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    enabled: true
+    key: app
+    values:
+      - mysql
+  tolerations:
+    - key: app
+      operator: Equal
+      value: mysql
+      effect: NoSchedule
